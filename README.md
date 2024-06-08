@@ -9,3 +9,4 @@ DB_PASSWORD=AVNS_6yDMlm9CFOqW2Ko6G2Y
 Была реализована комманда, с помощью которой можно стянуть
 все данные по описанным эндпоинтам и сохранить в БД.
 Причём есть 2 варианта: fetch:data - сохраняются файлы в формате json, fetch:data sorted - распределябтся по столбцам.
+Названия таблиц sales, orders, incomes, stocks и sorted_sales, sorted_orders, sorted_incomes, sorted_stocks соответственно.

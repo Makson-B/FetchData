@@ -6,13 +6,11 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
-        Schema::create('sorted_orders', function (Blueprint $table) {
+        Schema::create('orders', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('account_id')->constrained()->onDelete('cascade');
             $table->string('g_number');
             $table->dateTime('date');
             $table->dateTime('last_change_date');
@@ -35,11 +33,8 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
+    public function down()
     {
-        Schema::dropIfExists('sorted_orders');
+        Schema::dropIfExists('orders');
     }
 };

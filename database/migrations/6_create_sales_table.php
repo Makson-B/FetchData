@@ -6,20 +6,18 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
-        Schema::create('sorted_sales', function (Blueprint $table) {
+        Schema::create('sales', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('account_id')->constrained()->onDelete('cascade');
             $table->string('g_number');
             $table->date('date');
             $table->date('last_change_date');
             $table->string('supplier_article');
             $table->string('tech_size');
             $table->string('barcode');
-            $table->integer('total_price', 8, 2);
+            $table->integer('total_price');
             $table->integer('discount_percent');
             $table->boolean('is_supply');
             $table->boolean('is_realization');
@@ -44,11 +42,8 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
+    public function down()
     {
-        Schema::dropIfExists('sorted_sales');
+        Schema::dropIfExists('sales');
     }
 };

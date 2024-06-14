@@ -2,21 +2,18 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Account;
 use Illuminate\Console\Command;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
-use App\Models\SortedOrder;
-use App\Models\SortedSale;
-use App\Models\SortedIncome;
-use App\Models\SortedStock;
 use App\Models\Order;
 use App\Models\Sale;
 use App\Models\Income;
 use App\Models\Stock;
-use Illuminate\Validation\ValidationException;
 
 class FetchDataFromAPI extends Command
 {
-    protected $signature = 'fetch:data {sorted?} {table?}';
+    protected $signature = 'fetch:data {account_id} {table? : is optional. Can only be incomes,stocks,orders,sales or all(default)}';
     protected $description = 'Fetch data from external API';
 
     protected $modelMap = [
@@ -24,13 +21,6 @@ class FetchDataFromAPI extends Command
         'sales' => Sale::class,
         'incomes' => Income::class,
         'stocks' => Stock::class,
-    ];
-
-    protected $sortedModelMap = [
-        'orders' => SortedOrder::class,
-        'sales' => SortedSale::class,
-        'incomes' => SortedIncome::class,
-        'stocks' => SortedStock::class,
     ];
 
     protected $endpoints = [
@@ -47,96 +37,102 @@ class FetchDataFromAPI extends Command
 
     public function handle()
     {
-        $sorted = $this->argument('sorted');
-        $table = $this->argument('table');
-
-        //Проверка вызванной команды и вызов соответствующей функции "перелива" данных из API в DB
-        if (!isset($sorted) && !isset($table)) {
-            // Нет аргументов: загрузить все данные без сортировки
-            $this->fetchAllData();
-        } elseif ($sorted == 'sorted' && !isset($table)) {
-            // Указан только аргумент 'sorted', но нет таблицы
-            $this->fetchAllData(true);
-        } elseif ($sorted == 'sorted' && isset($table)) {
-            // Указан аргумент 'sorted' и таблица
-            if (isset($this->modelMap[$table])) {
-                $this->fetchData($table, true);
-            } else {
-                throw ValidationException::withMessages(['Command is incorrect! Use fetch:data sorted {table_name}.']);
-            }
-        } elseif (isset($this->modelMap[$sorted])) {
-            // Указана только таблица (без sorted)
-            $this->fetchData($sorted);
-        } else {
-            throw ValidationException::withMessages(['Command is incorrect! Use fetch:data sorted {table_name} or fetch:data {table_name}.']);
+        $account_id = $this->argument('account_id');
+        $account = Account::find($account_id);
+        if(!$account){
+            $this->error("Account not found!");
+            return;
         }
-
-        $this->info('Data fetch completed.');
-    }
-
-    protected function fetchAllData(bool $sorted = false): void
-    {
-        $this->fetchData('orders', $sorted);
-        $this->fetchData('sales', $sorted);
-        $this->fetchData('incomes', $sorted);
-        $this->fetchData('stocks', $sorted);
+        $this->info("Your account is '{$account->username}'.");
+        $table = $this->argument('table');
+        switch ($table) {
+            case 'incomes':
+            case 'stocks':
+            case 'orders':
+            case 'sales':
+                $this->fetchData($table, $account);
+                break;
+            case 'all':
+            case null:
+                $this->fetchData('incomes', $account);
+                $this->fetchData('stocks', $account);
+                $this->fetchData('orders', $account);
+                $this->fetchData('sales', $account);
+                break;
+            default:
+                $this->error("The 'table' parameter wrong! Use fetch:data --help");
+                return;
+        }
+        $this->info('Done! Everything was successful!');
     }
 
     //получаем данные из API и вызываем функцию "перелива" их в БД
-    protected function fetchData(string $dataType, bool $sorted = false): void
+    protected function fetchData(string $dataType, $account): void
     {
-        //данные для запроса
-        $token = config('api.api_key');
-        $apiUrl = config('api.api_url');
-        $dateFrom = $dataType === 'stocks' ? now()->format('Y-m-d') : '1900-01-01';
-        $dateTo = now()->format('Y-m-d');
-        $limit = '500';
-        $page = 1;
-        $endpoint = $this->endpoints[$dataType];
+        $this->info("Starting to fetch {$dataType} data using account {$account->username}(ID {$account->id}).");
 
-        $modelClass = $sorted ? $this->sortedModelMap[$dataType] : $this->modelMap[$dataType];
-
-        $response = Http::get("{$apiUrl}{$endpoint}?dateFrom={$dateFrom}&dateTo={$dateTo}&page={$page}&key={$token}&limit={$limit}");
-        $data = $response->json();
-
-        $totalPages = $data['meta']['last_page'];
-
-        $this->processPageData($data['data'], $modelClass, $sorted);
-//        $this->info(ucfirst($dataType) . " page {$page} of {$totalPages} processed.");
-
-        for ($page += 1; $page <= $totalPages; $page++) {
-            $response = Http::get("{$apiUrl}{$endpoint}?dateFrom={$dateFrom}&dateTo={$dateTo}&page={$page}&key={$token}&limit={$limit}");
-            $data = $response->json();
-            $this->processPageData($data['data'], $modelClass, $sorted);
-//            $this->info(ucfirst($dataType) . " page {$page} of {$totalPages} processed.");
+        // Получаем все токены аккаунта
+        $tokens = $account->tokens;
+        if ($tokens->isEmpty()) {
+            $this->error("No API tokens found for the account!");
+            return;
         }
-        $this->info(ucfirst($dataType) . " processed.");
+        //Используя каждый токен сливаем данные из апи, к которому токен относится
+        foreach ($tokens as $token) {
+            $tokenType = $token->token_type->type;
+            $tokenValue = $token->token;
+
+            $endpoint = $this->endpoints[$dataType];
+            $dateTo = now()->format('Y-m-d');
+            //Получаем только свежие данные. За последнюю неделю или только за сегодня, если это склады.
+            $dateFrom = $endpoint==='stocks'? $dateTo : now()->subDays(7)->format('Y-m-d');
+            $limit = '500';
+            $page = 1;
+
+            $modelClass = $this->modelMap[$dataType];
+            $apiUrl = $token->api_service->url;
+            $queryParams = "?dateFrom={$dateFrom}&dateTo={$dateTo}&{$tokenType}={$tokenValue}&limit={$limit}";
+
+            try {
+                $response = Http::get("{$apiUrl}{$endpoint}{$queryParams}&page={$page}");
+                $data = $response->json();
+
+                $totalPages = $data['meta']['last_page'];
+
+                $this->processPageData($data['data'], $modelClass, $account->id);
+//                $this->info(ucfirst($dataType) . " page {$page} of {$totalPages} processed.");
+
+                for ($page += 1; $page <= $totalPages; $page++) {
+                    while (true) {
+                        $response = Http::get("{$apiUrl}{$endpoint}{$queryParams}&page={$page}");
+                        if ($response->status() === 429) {
+                            $this->info('Too many requests, retrying in 30 seconds...');
+                            sleep(30);
+                        }elseif ($response->status() !== 200){
+                            $this->info($response->status());
+                        } else {
+                            break;
+                        }
+                    }
+                    $data = $response->json('data');
+                    $this->processPageData($data, $modelClass, $account->id);
+//                    $this->info(ucfirst($dataType) . " page {$page} of {$totalPages} processed.");
+                }
+                $this->info(ucfirst($dataType) . " processed.");
+            } catch (RequestException $e) {
+                $this->error('Error fetching data: ' . $e->getMessage());
+            }
+        }
     }
 
     //Функция перелива данных в БД
-    protected function processPageData(array $data, string $modelClass, bool $sorted): void
+    protected function processPageData(array $data, string $modelClass, int $accountId): void
     {
-        if ($sorted) {
-            //Вариант, если нужно сохранить отсортированные данные
-            foreach ($data as $item) {
-                // Создаем новую строку в БД с указанными данными, если её нет
-                $modelClass::firstOrCreate($item);
-            }
-        } else {
-            //Вариант, если данные сохранять в json без сортировки
-            //Проверяем данные и удаляем уже имеющиеся в БД, чтобы не повторять
-            foreach ($data as $key => $data_item) {
-                $exists = $modelClass::whereRaw('JSON_CONTAINS(data, ?)', json_encode($data_item))->exists();
-                if ($exists) {
-                    unset($data[$key]);
-                }
-            }
-            // Сохраняем данные пачками json по 100, чтобы корректно помещались
-            $dataChunks = array_chunk($data, 100);
-            foreach ($dataChunks as $chunk) {
-                $modelClass::firstOrCreate(['data' => json_encode($chunk)]);
-            }
-            sleep(1);
+        foreach ($data as $item) {
+            // Добавляем account_id к данным перед сохранением
+            $item['account_id'] = $accountId;
+            // Создаем новую строку в БД с указанными данными, если её нет
+            $modelClass::firstOrCreate($item);
         }
     }
 }

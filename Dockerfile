@@ -32,8 +32,7 @@ RUN chmod -R 777 /tmp
 # Настраиваем cron
 COPY crontab /etc/cron.d/laravel-cron
 RUN chmod 0644 /etc/cron.d/laravel-cron \
-    && touch /var/log/cron.log \
-    && crontab /etc/cron.d/laravel-cron
+        && touch /var/log/cron.log
 
 # Запускаем PHP-FPM
 CMD ["php-fpm"]

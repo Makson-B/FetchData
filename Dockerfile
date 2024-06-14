@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     unzip \
     git \
+    cron \
     && docker-php-ext-install zip pdo_mysql
 
 # Устанавливаем Composer
@@ -27,6 +28,11 @@ RUN chown -R www-data:www-data /var/www/html \
 
 # Устанавливаем права на запись для директории
 RUN chmod -R 777 /tmp
+
+# Настраиваем cron
+COPY ./crontab /etc/cron.d/laravel-cron
+RUN chmod 0644 /etc/cron.d/laravel-cron \
+        && touch /var/log/cron.log
 
 # Запускаем PHP-FPM
 CMD ["php-fpm"]

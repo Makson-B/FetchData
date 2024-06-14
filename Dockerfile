@@ -30,7 +30,7 @@ RUN chown -R www-data:www-data /var/www/html \
 RUN chmod -R 777 /tmp
 
 # Настраиваем cron
-COPY ./crontab /etc/cron.d/laravel-cron
+COPY crontab /etc/cron.d/laravel-cron
 RUN chmod 0644 /etc/cron.d/laravel-cron \
         && touch /var/log/cron.log
 

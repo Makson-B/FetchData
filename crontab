@@ -1,1 +1,2 @@
-* * * * * www-data php /var/www/html/artisan schedule:run >> /var/log/cron.log 2>&1
+* * * * * cd /var/www/html && php artisan schedule:run >> /dev/null 2>&1
+

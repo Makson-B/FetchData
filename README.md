@@ -17,7 +17,7 @@ php artisan add:company {Company_Name}
 
 #### Для добавления аккаунтов компании:
 ```bash
-php artisan add:account {Company_ID}{Username}
+php artisan add:account {Company_ID} {Username}
 ```
 ##### В ответе: 
 ###### Account '{Username}' with ID '{Account_ID}' successfully added to company '{Company_name}'.

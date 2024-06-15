@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     git \
     cron \
+    supervisor \
     && docker-php-ext-install zip pdo_mysql
 
 # Устанавливаем Composer
@@ -32,7 +33,11 @@ RUN chmod -R 777 /tmp
 # Настраиваем cron
 COPY crontab /etc/cron.d/laravel-cron
 RUN chmod 0644 /etc/cron.d/laravel-cron \
+        && crontab /etc/cron.d/laravel-cron \
         && touch /var/log/cron.log
 
-# Запускаем PHP-FPM
-CMD ["php-fpm"]
+# Настраиваем supervisord
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Запуск supervisord
+CMD ["/usr/bin/supervisord"]
